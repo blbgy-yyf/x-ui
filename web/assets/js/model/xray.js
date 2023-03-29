@@ -44,8 +44,6 @@ const RULE_DOMAIN = {
 };
 
 const FLOW_CONTROL = {
-    ORIGIN: "xtls-rprx-origin",
-    DIRECT: "xtls-rprx-direct",
     VISION: "xtls-rprx-vision",
 };
 
@@ -114,13 +112,11 @@ class XrayCommonClass {
 }
 
 class TcpStreamSettings extends XrayCommonClass {
-    constructor(acceptProxyProtocol=false,
-        type = 'none',
+    constructor(type = 'none',
         request = new TcpStreamSettings.TcpRequest(),
         response = new TcpStreamSettings.TcpResponse(),
     ) {
         super();
-        this.acceptProxyProtocol = acceptProxyProtocol;
         this.type = type;
         this.request = request;
         this.response = response;
@@ -131,7 +127,7 @@ class TcpStreamSettings extends XrayCommonClass {
         if (!header) {
             header = {};
         }
-        return new TcpStreamSettings(json.acceptProxyProtocol,
+        return new TcpStreamSettings(
             header.type,
             TcpStreamSettings.TcpRequest.fromJson(header.request),
             TcpStreamSettings.TcpResponse.fromJson(header.response),
@@ -141,7 +137,6 @@ class TcpStreamSettings extends XrayCommonClass {
     toJson() {
         return {
             header: {
-                acceptProxyProtocol: this.acceptProxyProtocol,
                 type: this.type,
                 request: this.type === 'http' ? this.request.toJson() : undefined,
                 response: this.type === 'http' ? this.response.toJson() : undefined,
@@ -300,9 +295,8 @@ class KcpStreamSettings extends XrayCommonClass {
 }
 
 class WsStreamSettings extends XrayCommonClass {
-    constructor(acceptProxyProtocol=false, path = '/', headers = []) {
+    constructor(path = '/', headers = []) {
         super();
-        this.acceptProxyProtocol = acceptProxyProtocol;
         this.path = path;
         this.headers = headers;
     }
@@ -326,7 +320,6 @@ class WsStreamSettings extends XrayCommonClass {
 
     static fromJson(json = {}) {
         return new WsStreamSettings(
-            json.acceptProxyProtocol,
             json.path,
             XrayCommonClass.toHeaders(json.headers),
         );
@@ -334,7 +327,6 @@ class WsStreamSettings extends XrayCommonClass {
 
     toJson() {
         return {
-            acceptProxyProtocol: this.acceptProxyProtocol,
             path: this.path,
             headers: XrayCommonClass.toV2Headers(this.headers, false),
         };
@@ -421,11 +413,10 @@ class GrpcStreamSettings extends XrayCommonClass {
 
 class TlsStreamSettings extends XrayCommonClass {
     constructor(serverName = '',
-        certificates = [new TlsStreamSettings.Cert()], alpn="") {
+        certificates = [new TlsStreamSettings.Cert()]) {
         super();
         this.server = serverName;
         this.certs = certificates;
-        this.alpn = alpn;
     }
 
     addCert(cert) {
@@ -444,7 +435,6 @@ class TlsStreamSettings extends XrayCommonClass {
         return new TlsStreamSettings(
             json.serverName,
             certs,
-            json.alpn,
         );
     }
 
@@ -452,7 +442,6 @@ class TlsStreamSettings extends XrayCommonClass {
         return {
             serverName: this.server,
             certificates: TlsStreamSettings.toJsonArray(this.certs),
-            alpn: this.alpn
         };
     }
 }
@@ -642,7 +631,11 @@ class Inbound extends XrayCommonClass {
         if (isTls) {
             this.stream.security = 'tls';
         } else {
-            this.stream.security = 'none';
+            if (this.protocol === Protocols.TROJAN) {
+                this.xtls = true;
+            } else {
+                this.stream.security = 'none';
+            }
         }
     }
 
@@ -654,7 +647,11 @@ class Inbound extends XrayCommonClass {
         if (isXTls) {
             this.stream.security = 'xtls';
         } else {
-            this.stream.security = 'none';
+            if (this.protocol === Protocols.TROJAN) {
+                this.tls = true;
+            } else {
+                this.stream.security = 'none';
+            }
         }
     }
 
@@ -1011,8 +1008,8 @@ class Inbound extends XrayCommonClass {
                 params.set("sni", address);
             }
         }
-
-        if (this.xtls) {
+        
+        if (this.tls) {
             params.set("flow", this.settings.vlesses[0].flow);
         }
 
@@ -1100,9 +1097,11 @@ class Inbound extends XrayCommonClass {
                 params.set("sni", address);
             }
         }
-        if (this.xtls) {
+        
+       if (this.tls) {
             params.set("flow", this.settings.clients[0].flow);
         }
+        
         const link = `trojan://${settings.clients[0].password}@${address}:${port}`;
         const url = new URL(link);
         for (const [key, value] of params) {
@@ -1285,7 +1284,7 @@ Inbound.VLESSSettings = class extends Inbound.Settings {
 };
 Inbound.VLESSSettings.VLESS = class extends XrayCommonClass {
 
-    constructor(id = RandomUtil.randomUUID(), flow = FLOW_CONTROL.VISION) {
+    constructor(id = RandomUtil.randomUUID(), flow = FLOW_CONTROL.DIRECT) {
         super();
         this.id = id;
         this.flow = flow;
@@ -1373,7 +1372,7 @@ Inbound.TrojanSettings = class extends Inbound.Settings {
     }
 };
 Inbound.TrojanSettings.Client = class extends XrayCommonClass {
-    constructor(password = RandomUtil.randomSeq(10), flow = FLOW_CONTROL.VISION) {
+    constructor(password = RandomUtil.randomSeq(10), flow = FLOW_CONTROL.DIRECT) {
         super();
         this.password = password;
         this.flow = flow;
